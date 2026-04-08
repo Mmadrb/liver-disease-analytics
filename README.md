@@ -57,13 +57,23 @@ liver-disease-analytics/
 └── README.md                   # Project documentation
 ```
 
-## Deployment on Streamlit Cloud
+## How to Run
 
-1.  **Push your repository to GitHub.**
-2.  **Go to [Streamlit Cloud](https://share.streamlit.io/) and log in.**
-3.  **Click on "New app" and select your GitHub repository.**
-4.  **Specify the main file path as `liver_disease.py` and the Python version.**
-5.  **Click "Deploy!"**
+To run the application locally, ensure you have Python installed, then follow these steps:
+
+1.  **Clone the repository**:
+    ```bash
+    git clone https://github.com/Mmadrb/liver-disease-analytics.git
+    cd liver-disease-analytics
+    ```
+2.  **Install dependencies**:
+    ```bash
+    pip install -r requirements.txt
+    ```
+3.  **Launch the app**:
+    ```bash
+    streamlit run liver_disease.py
+    ```
 
 ## Contributing
 
@@ -73,6 +83,4 @@ Contributions are welcome! Please feel free to open issues or submit pull reques
 
 This project is licensed under the MIT License - see the LICENSE file for details (if applicable).
 
-## Contact
 
-For any questions or suggestions, please contact [Your Name/Email/GitHub Profile].
