@@ -281,6 +281,7 @@ def train_model(df):
     # FIX 2: PRE-COMPUTE SHAP EXPLAINER
     # ==========================================
     try:
+        # Pre-transform data for SHAP if needed, but TreeExplainer usually takes the model
         explainer = shap.TreeExplainer(pipeline.named_steps['clf'])
     except Exception:
         explainer = None
