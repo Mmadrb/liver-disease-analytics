@@ -4,20 +4,22 @@
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/release/python-3110/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A production-ready clinical machine learning system for liver disease classification, featuring **TRIPOD-AI** compliant pipelines, **SHAP-based** interpretability, and a real-time **Streamlit** interface.
+A clinical analytics platform for liver disease classification, featuring a **Dual-Engine ML Architecture**, **SHAP-based** interpretability, and a real-time **Streamlit** interface.
 
 ---
 
 ## 📋 Project Overview
 
-This repository integrates a clinical ML pipeline designed to classify primary liver diagnoses based on baseline patient features. The system is built with a focus on **reproducibility**, **clinical utility**, and **transparency**, adhering to international reporting standards for AI in healthcare.
+This repository provides an end-to-end clinical analytics dashboard for liver disease. It features two distinct machine learning engines:
+1.  **🩺 Clinical Model**: A lightweight, 8-feature model designed for rapid "Time-Zero" assessment.
+2.  **📊 Full Data Pipeline**: A comprehensive, **TRIPOD-AI** compliant model integrating 19 baseline clinical features with post-hoc **Isotonic Calibration**.
 
 ### Key Features
-- **TRIPOD-AI Compliant Pipeline**: End-to-end ML workflow including data cleaning, three-way splitting, and automated model selection.
+- **Dual-Engine ML**: Choose between a simplified clinical model or a high-dimensional research-grade pipeline.
+- **TRIPOD-AI Compliance**: The full pipeline follows international reporting standards for clinical AI.
 - **Calibrated Probabilities**: Uses **Isotonic Regression** to ensure predicted probabilities reflect true clinical risk.
-- **Explainable AI (XAI)**: Integrated **SHAP (SHapley Additive exPlanations)** for local and global model interpretability.
-- **Clinical Utility Analysis**: Includes **Decision Curve Analysis (DCA)** to evaluate the net benefit of model-based decisions.
-- **Production-Ready Architecture**: Modular design separating training logic from inference, with serialized model loading.
+- **Explainable AI (XAI)**: Integrated **SHAP (SHapley Additive exPlanations)** for both global and local model interpretability.
+- **Clinical Utility Analysis**: Comprehensive dashboard covering mortality rates, ACLF stratification, and organ failure analysis.
 
 ---
 
@@ -43,8 +45,8 @@ streamlit run liver_disease.py
 
 ## 🛠️ Technical Architecture
 
-### Data Schema
-The model utilizes 19 baseline clinical features:
+### Full Pipeline Data Schema
+The research-grade model utilizes 19 baseline clinical features:
 - **Demographics**: Age, Sex
 - **Comorbidities/Habits**: DM, Smoke, Alcohol Use, Other toxins
 - **Laboratory Values**: WBC, Hb, Plt, PT, INR, Total Bilirubin, Albumin, ALP, AST, ALT, CRP
@@ -53,18 +55,7 @@ The model utilizes 19 baseline clinical features:
 ### ML Pipeline Details
 - **Preprocessing**: Median imputation for numeric data, most-frequent for categorical; Standard scaling and One-Hot encoding.
 - **Imbalance Handling**: Synthetic Minority Over-sampling Technique (**SMOTE**) integrated into the training pipeline.
-- **Model Selection**: Automated comparison between **Random Forest** and **Logistic Regression** using Repeated Stratified K-Fold CV.
-- **Calibration**: Post-hoc calibration via Isotonic Regression on a dedicated calibration set.
-
----
-
-## 📊 Model Evaluation Summary
-
-| Metric | Value (Test Set) |
-| :--- | :--- |
-| **ROC-AUC (Weighted OvR)** | 0.894 |
-| **Balanced Accuracy** | 0.821 |
-| **F1-Score (Weighted)** | 0.845 |
+- **Calibration**: Post-hoc calibration via Isotonic Regression on a dedicated calibration set (25% of development data).
 
 ---
 
@@ -72,7 +63,7 @@ The model utilizes 19 baseline clinical features:
 
 The system provides both **Global** (feature importance across the population) and **Local** (individual patient reasoning) explanations.
 
-- **Global**: Identifies AST, Bilirubin, and Age as top predictors.
+- **Global**: Identifies key predictors like AST, Bilirubin, and Age.
 - **Local**: The Streamlit app generates a SHAP bar plot for every prediction, showing which features increased or decreased the risk for a specific patient.
 
 ---
@@ -84,7 +75,7 @@ If you use this pipeline or app in your research, please cite:
 ```bibtex
 @software{liver_disease_analytics_2026,
   author = {Mmadrb},
-  title = {Liver Disease Analytics: A TRIPOD-AI Compliant Clinical ML System},
+  title = {Liver Disease Analytics: A Dual-Engine Clinical ML System},
   year = {2026},
   url = {https://github.com/Mmadrb/liver-disease-analytics}
 }
