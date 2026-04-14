@@ -1,8 +1,12 @@
 # Liver Disease Analytics
 
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://liver-disease-analytics.streamlit.app/)
+
 ## Project Description
 
 This project provides an interactive Streamlit application for analyzing liver disease data. It includes data cleaning, exploratory data analysis, machine learning model training (Random Forest with SMOTE for imbalanced data), and an explainable AI (SHAP) component for live patient predictions. The application aims to offer insights into liver disease progression and risk factors based on various clinical parameters.
+
+**Live App:** [https://liver-disease-analytics.streamlit.app/](https://liver-disease-analytics.streamlit.app/)
 
 ## Features
 
@@ -13,14 +17,14 @@ This project provides an interactive Streamlit application for analyzing liver d
 *   **Explainable AI (SHAP):** Provides insights into feature importance for global model predictions and individual patient predictions.
 *   **User-Friendly Interface:** Built with Streamlit for easy interaction and visualization.
 
-## Installation
+## Installation & Local Run
 
 To set up the project locally, follow these steps:
 
 1.  **Clone the repository:**
 
     ```bash
-    git clone https://github.com/YOUR_USERNAME/liver-disease-analytics.git
+    git clone https://github.com/Mmadrb/liver-disease-analytics.git
     cd liver-disease-analytics
     ```
 
@@ -37,15 +41,11 @@ To set up the project locally, follow these steps:
     pip install -r requirements.txt
     ```
 
-## Usage
+4.  **Run the Streamlit application:**
 
-To run the Streamlit application:
-
-```bash
-streamlit run liver_disease.py
-```
-
-The application will open in your web browser. You can then interact with the various sections to explore data, view model performance, and make predictions.
+    ```bash
+    streamlit run liver_disease.py
+    ```
 
 ## Project Structure
 
@@ -54,26 +54,9 @@ liver-disease-analytics/
 ├── liver_disease.py            # Main Streamlit application script
 ├── liver disease dataset.xlsx  # Sample dataset
 ├── requirements.txt            # Python dependencies
+├── DEPLOYMENT_GUIDE.md         # Deployment instructions
 └── README.md                   # Project documentation
 ```
-
-## How to Run
-
-To run the application locally, ensure you have Python installed, then follow these steps:
-
-1.  **Clone the repository**:
-    ```bash
-    git clone https://github.com/Mmadrb/liver-disease-analytics.git
-    cd liver-disease-analytics
-    ```
-2.  **Install dependencies**:
-    ```bash
-    pip install -r requirements.txt
-    ```
-3.  **Launch the app**:
-    ```bash
-    streamlit run liver_disease.py
-    ```
 
 ## Contributing
 
@@ -81,6 +64,4 @@ Contributions are welcome! Please feel free to open issues or submit pull reques
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details (if applicable).
-
-
+This project is licensed under the MIT License.

@@ -6,3 +6,4 @@ shap
 scikit-learn
 imblearn
 openpyxl
+statsmodels
