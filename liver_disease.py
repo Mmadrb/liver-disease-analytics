@@ -301,7 +301,7 @@ else: st.warning("No data matches the selected filters."); st.stop()
 
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["Executive Summary", "Risk Stratification", "Clinical Indicators", "Organ Failure & ACLF", "Length of Stay", "🤖 ML & SHAP Predictor"])
 
-# ----------------- TABS 1-5 (Unchanged) -----------------
+# ----------------- TABS 1-5 (Restored) -----------------
 with tab1:
     c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("Total Patients", f"{len(df):,}"); c2.metric("Mortality Rate", f"{mortality_rate:.1f}%")
