@@ -176,56 +176,31 @@ def train_clinical_model(df):
 
 @st.cache_resource
 def train_full_pipeline_model(df):
-    """
-    TRIPOD-AI Compliant Liver Disease Classifier
-    Integrates liver_baseline_classifier.py logic
-    """
+    """TRIPOD-AI Compliant Liver Disease Classifier"""
     if 'Diagnosis' not in df.columns: return None
-    
-    # 1. Data Cleaning & Exclusion (from liver_baseline_classifier.py)
     df_clean = df.dropna(subset=["Diagnosis"]).copy()
     EXCLUDED_CLASSES = ["AIH", "HepB"]
     df_clean = df_clean[~df_clean["Diagnosis"].isin(EXCLUDED_CLASSES)]
     
-    # 2. Define Baseline Features
-    BASELINE_FEATURES = [
-        'Age', 'Sex', 'DM', 'Smoke', 'Alcohol Use', 'Other toxins',
-        'WBC-1', 'Hb', 'Plt', 'PT', 'INR-1',
-        'TB: Total bilirubin', 'Albumin',
-        'ALP: Alkaline phosphatase',
-        'AST: Aspartate amino transferase',
-        'ALT: Alamine amino transferase',
-        'AST/ALT Ratio', 'Creatinine unadjusted', 'CRP level'
-    ]
-    
+    BASELINE_FEATURES = ['Age', 'Sex', 'DM', 'Smoke', 'Alcohol Use', 'Other toxins', 'WBC-1', 'Hb', 'Plt', 'PT', 'INR-1', 'TB: Total bilirubin', 'Albumin', 'ALP: Alkaline phosphatase', 'AST: Aspartate amino transferase', 'ALT: Alamine amino transferase', 'AST/ALT Ratio', 'Creatinine unadjusted', 'CRP level']
     available_features = [f for f in BASELINE_FEATURES if f in df_clean.columns]
-    X = df_clean[available_features].copy()
-    y = df_clean["Diagnosis"]
+    X, y = df_clean[available_features].copy(), df_clean["Diagnosis"]
+    le = LabelEncoder(); y_encoded = le.fit_transform(y)
     
-    le = LabelEncoder()
-    y_encoded = le.fit_transform(y)
-    
-    # 3. Three-Way Split (60/20/20)
     X_dev, X_test, y_dev, y_test = train_test_split(X, y_encoded, test_size=0.20, stratify=y_encoded, random_state=42)
     X_train, X_calib, y_train, y_calib = train_test_split(X_dev, y_dev, test_size=0.25, stratify=y_dev, random_state=42)
     
-    # 4. Preprocessing Pipeline
     numeric_features = X.select_dtypes(include=["int64", "float64", "int32", "float32"]).columns.tolist()
     categorical_features = X.select_dtypes(include=["object", "category"]).columns.tolist()
     
     numeric_transformer = Pipeline([("imputer", SimpleImputer(strategy="median")), ("scaler", StandardScaler())])
     categorical_transformer = Pipeline([("imputer", SimpleImputer(strategy="most_frequent")), ("onehot", OneHotEncoder(drop="first", handle_unknown="ignore", sparse_output=False))])
-    
     preprocessor = ColumnTransformer([("num", numeric_transformer, numeric_features), ("cat", categorical_transformer, categorical_features)])
     
-    # 5. Model Pipeline (RF + SMOTE)
-    rf_model = RandomForestClassifier(n_estimators=500, max_depth=None, min_samples_split=2, min_samples_leaf=1, random_state=42, n_jobs=-1)
+    rf_model = RandomForestClassifier(n_estimators=500, random_state=42, n_jobs=-1)
     pipeline = ImbPipeline([("preprocessor", preprocessor), ("smote", SMOTE(random_state=42)), ("classifier", rf_model)])
-    
-    # 6. Fit & Calibrate
     pipeline.fit(X_train, y_train)
     
-    # Isotonic Calibration
     y_prob_calib = pipeline.predict_proba(X_calib)
     iso_calibrators = []
     for i in range(len(le.classes_)):
@@ -233,35 +208,19 @@ def train_full_pipeline_model(df):
         iso.fit(y_prob_calib[:, i], (y_calib == i).astype(int))
         iso_calibrators.append(iso)
     
-    # 7. Evaluation on Test Set
     y_prob_raw = pipeline.predict_proba(X_test)
     y_prob_calibrated = np.zeros_like(y_prob_raw)
-    for i, iso in enumerate(iso_calibrators):
-        y_prob_calibrated[:, i] = iso.transform(y_prob_raw[:, i])
-    
-    # Re-normalize calibrated probabilities
+    for i, iso in enumerate(iso_calibrators): y_prob_calibrated[:, i] = iso.transform(y_prob_raw[:, i])
     row_sums = y_prob_calibrated.sum(axis=1, keepdims=True)
     y_prob_calibrated = np.divide(y_prob_calibrated, row_sums, out=np.zeros_like(y_prob_calibrated), where=row_sums!=0)
     y_pred = np.argmax(y_prob_calibrated, axis=1)
     
-    # Feature Names
     ohe = pipeline.named_steps['preprocessor'].named_transformers_['cat'].named_steps['onehot'] if categorical_features else None
     cat_features_list = ohe.get_feature_names_out(categorical_features) if ohe else []
     all_features = np.concatenate([numeric_features, cat_features_list])
     
-    return {
-        'pipeline': pipeline, 'calibrators': iso_calibrators, 'label_encoder': le, 
-        'test_accuracy': accuracy_score(y_test, y_pred), 'cv_accuracy': np.nan,
-        'roc_auc': roc_auc_score(y_test, y_prob_calibrated, multi_class="ovr"),
-        'confusion_matrix': confusion_matrix(y_test, y_pred),
-        'classification_report': classification_report(y_test, y_pred, target_names=le.classes_, output_dict=True, zero_division=0),
-        'feature_importances': pd.DataFrame({"Feature": all_features, "Importance": pipeline.named_steps['classifier'].feature_importances_}).sort_values(by="Importance", ascending=False).reset_index(drop=True),
-        'clean_feature_names': all_features.tolist(), 'valid_features': available_features, 
-        'explainer': shap.TreeExplainer(pipeline.named_steps['classifier']),
-        'numeric_features': numeric_features, 'categorical_features': categorical_features, 'raw_df': X
-    }
+    return {'pipeline': pipeline, 'calibrators': iso_calibrators, 'label_encoder': le, 'test_accuracy': accuracy_score(y_test, y_pred), 'cv_accuracy': np.nan, 'roc_auc': roc_auc_score(y_test, y_prob_calibrated, multi_class="ovr"), 'confusion_matrix': confusion_matrix(y_test, y_pred), 'classification_report': classification_report(y_test, y_pred, target_names=le.classes_, output_dict=True, zero_division=0), 'feature_importances': pd.DataFrame({"Feature": all_features, "Importance": pipeline.named_steps['classifier'].feature_importances_}).sort_values(by="Importance", ascending=False).reset_index(drop=True), 'clean_feature_names': all_features.tolist(), 'valid_features': available_features, 'explainer': shap.TreeExplainer(pipeline.named_steps['classifier'])}
 
-# Train both models on load
 with st.spinner("Training Dual ML Engines..."):
     clinical_results = train_clinical_model(df_raw)
     full_results = train_full_pipeline_model(df_raw)
@@ -395,34 +354,17 @@ with tab5:
 # ----------------- TAB 6: DUAL ML ENGINE -----------------
 with tab6:
     st.markdown("### 🧠 Machine Learning & Explainable AI")
-    
     engine_choice = st.segmented_control("Select Inference Engine", options=["🩺 Clinical Model (8 Features)", "📊 Full Data Pipeline (All Features)"], default="🩺 Clinical Model (8 Features)")
-    
     is_full_model = "Full Data" in engine_choice
     active_results = full_results if is_full_model else clinical_results
-    
     if active_results is None: st.error(f"Could not train the selected model. Check data constraints."); st.stop()
-        
-    model_pipeline = active_results['pipeline']
-    label_encoder = active_results['label_encoder']
-    test_acc = active_results['test_accuracy']
-    cv_acc = active_results['cv_accuracy']
-    roc_auc = active_results['roc_auc']
-    conf_matrix = active_results['confusion_matrix']
-    class_report = active_results['classification_report']
-    feature_importances = active_results['feature_importances']
-    clean_feat_names = active_results['clean_feature_names']
-    valid_features = active_results['valid_features']
-    shap_explainer = active_results['explainer']
-
+    model_pipeline, label_encoder, test_acc, cv_acc, roc_auc, conf_matrix, class_report, feature_importances, clean_feat_names, valid_features, shap_explainer = active_results['pipeline'], active_results['label_encoder'], active_results['test_accuracy'], active_results['cv_accuracy'], active_results['roc_auc'], active_results['confusion_matrix'], active_results['classification_report'], active_results['feature_importances'], active_results['clean_feature_names'], active_results['valid_features'], active_results['explainer']
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Algorithm", "RF + SMOTE (500 Trees)" if is_full_model else "RF + SMOTE (300 Trees)")
     m2.metric("5-Fold CV", f"{cv_acc * 100:.1f}%" if not np.isnan(cv_acc) else "Skipped (High Dim)")
     m3.metric("Test Accuracy", f"{test_acc * 100:.1f}%")
     m4.metric("ROC-AUC", f"{roc_auc:.3f}" if not np.isnan(roc_auc) else "N/A")
-    
     if is_full_model: st.caption("💡 *Note: High accuracy in the Full Data Pipeline is driven by administrative/post-admission variables (e.g., DILI status, Precipitant Factors) that act as proxies for the target. See Feature Importance below.*")
-
     with st.expander("🔮 Live Patient Predictor & AI Explanation", expanded=True):
         if is_full_model:
             st.markdown("**Dynamic Feature Input** (Auto-generated from dataset columns)")
@@ -477,30 +419,20 @@ with tab6:
             with form_c3:
                 if 'Bilirubin' in valid_features: user_dict['Bilirubin'] = [st.slider("Bilirubin", float(df_raw['Bilirubin'].min()), float(df_raw['Bilirubin'].max()), float(df_raw['Bilirubin'].median()))]
                 if 'ACLF Grade' in valid_features: user_dict['ACLF Grade'] = [st.selectbox("ACLF Grade", sorted(df_raw['ACLF Grade'].unique()))]
-                st.markdown("<br>", unsafe_allow_html=True)
-
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("Predict & Explain 🚀", type="primary", use_container_width=True): st.session_state.run_prediction = True
-
         if st.session_state.get('run_prediction', False):
             user_data = pd.DataFrame(user_dict)
-            
-            # Prediction Logic (Calibrated for Full Model)
             if is_full_model:
                 y_prob_raw = model_pipeline.predict_proba(user_data)
                 y_prob_calibrated = np.zeros_like(y_prob_raw)
                 for i, iso in enumerate(active_results['calibrators']): y_prob_calibrated[:, i] = iso.transform(y_prob_raw[:, i])
                 row_sums = y_prob_calibrated.sum(axis=1, keepdims=True)
                 y_prob_calibrated = np.divide(y_prob_calibrated, row_sums, out=np.zeros_like(y_prob_calibrated), where=row_sums!=0)
-                pred_proba = y_prob_calibrated[0]
-                pred_encoded = [np.argmax(pred_proba)]
-            else:
-                pred_encoded = model_pipeline.predict(user_data)
-                pred_proba = model_pipeline.predict_proba(user_data)[0]
-            
+                pred_proba, pred_encoded = y_prob_calibrated[0], [np.argmax(y_prob_calibrated[0])]
+            else: pred_encoded, pred_proba = model_pipeline.predict(user_data), model_pipeline.predict_proba(user_data)[0]
             pred_class = label_encoder.inverse_transform(pred_encoded)[0]
             proba_df = pd.DataFrame({'Diagnosis': label_encoder.classes_, 'Probability': pred_proba * 100}).sort_values('Probability', ascending=False).round(2)
-            
             col_r1, col_r2 = st.columns(2)
             with col_r1:
                 st.success(f"### Predicted: **{pred_class}**")
@@ -509,19 +441,15 @@ with tab6:
                 st.markdown("#### AI Reasoning (SHAP)")
                 try:
                     user_transformed = model_pipeline.named_steps['preprocessor'].transform(user_data) if is_full_model else model_pipeline.named_steps['prep'].transform(user_data)
-                    if shap_explainer is not None: shap_values = shap_explainer.shap_values(user_transformed)
-                    else: shap_values = shap.TreeExplainer(model_pipeline.named_steps['classifier'] if is_full_model else model_pipeline.named_steps['clf']).shap_values(user_transformed)
-                    
+                    shap_values = shap_explainer.shap_values(user_transformed)
                     if isinstance(shap_values, list): local_shap = shap_values[pred_encoded[0]][0]
                     elif len(np.array(shap_values).shape) == 3: local_shap = shap_values[0, :, pred_encoded[0]]
                     else: local_shap = shap_values[0]
-                        
                     shap_df = pd.DataFrame({'Feature': clean_feat_names, 'SHAP Impact': local_shap})
                     shap_df['Direction'] = shap_df['SHAP Impact'].apply(lambda x: '↑ Increases' if x > 0 else '↓ Decreases')
                     shap_df = shap_df.reindex(shap_df['SHAP Impact'].abs().sort_values(ascending=False).index)
                     st.plotly_chart(px.bar(shap_df.head(10), x='SHAP Impact', y='Feature', color='Direction', orientation='h', color_discrete_map={'↑ Increases': '#E74C3C', '↓ Decreases': '#2E86C1'}, title=f"Top Factors for '{pred_class}'").update_layout(yaxis={'categoryorder': 'total ascending'}), use_container_width=True)
                 except Exception as e: st.warning(f"SHAP calculation failed: {e}")
-    
     st.markdown("---")
     col1, col2 = st.columns([1.2, 1])
     with col1:
