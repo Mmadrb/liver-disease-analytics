@@ -1,67 +1,96 @@
-# Liver Disease Analytics
+# 🩺 Liver Disease Analytics & Clinical ML Predictor
 
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://liver-disease-analytics.streamlit.app/)
+[![Streamlit App](https://static.streamlit.io/badge_streamlit.svg)](https://liver-disease-analytics.streamlit.app/)
+[![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/release/python-3110/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## Project Description
+A production-ready clinical machine learning system for liver disease classification, featuring **TRIPOD-AI** compliant pipelines, **SHAP-based** interpretability, and a real-time **Streamlit** interface.
 
-This project provides an interactive Streamlit application for analyzing liver disease data. It includes data cleaning, exploratory data analysis, machine learning model training (Random Forest with SMOTE for imbalanced data), and an explainable AI (SHAP) component for live patient predictions. The application aims to offer insights into liver disease progression and risk factors based on various clinical parameters.
+---
 
-**Live App:** [https://liver-disease-analytics.streamlit.app/](https://liver-disease-analytics.streamlit.app/)
+## 📋 Project Overview
 
-## Features
+This repository integrates a clinical ML pipeline designed to classify primary liver diagnoses based on baseline patient features. The system is built with a focus on **reproducibility**, **clinical utility**, and **transparency**, adhering to international reporting standards for AI in healthcare.
 
-*   **Interactive Data Exploration:** Visualize key demographic and clinical features.
-*   **Automated Data Cleaning:** Handles missing values, renames columns, and converts data types.
-*   **ACLF Grade Calculation:** Dynamically identifies and processes Acute-on-Chronic Liver Failure (ACLF) grades.
-*   **Machine Learning Model:** Predicts liver disease outcomes using a Random Forest Classifier.
-*   **Explainable AI (SHAP):** Provides insights into feature importance for global model predictions and individual patient predictions.
-*   **User-Friendly Interface:** Built with Streamlit for easy interaction and visualization.
+### Key Features
+- **TRIPOD-AI Compliant Pipeline**: End-to-end ML workflow including data cleaning, three-way splitting, and automated model selection.
+- **Calibrated Probabilities**: Uses **Isotonic Regression** to ensure predicted probabilities reflect true clinical risk.
+- **Explainable AI (XAI)**: Integrated **SHAP (SHapley Additive exPlanations)** for local and global model interpretability.
+- **Clinical Utility Analysis**: Includes **Decision Curve Analysis (DCA)** to evaluate the net benefit of model-based decisions.
+- **Production-Ready Architecture**: Modular design separating training logic from inference, with serialized model loading.
 
-## Installation & Local Run
+---
 
-To set up the project locally, follow these steps:
+## 🚀 Installation & Setup
 
-1.  **Clone the repository:**
-
-    ```bash
-    git clone https://github.com/Mmadrb/liver-disease-analytics.git
-    cd liver-disease-analytics
-    ```
-
-2.  **Create a virtual environment (recommended):**
-
-    ```bash
-    python -m venv venv
-    source venv/bin/activate  # On Windows, use `venv\Scripts\activate`
-    ```
-
-3.  **Install dependencies:**
-
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-4.  **Run the Streamlit application:**
-
-    ```bash
-    streamlit run liver_disease.py
-    ```
-
-## Project Structure
-
-```
-liver-disease-analytics/
-├── liver_disease.py            # Main Streamlit application script
-├── liver disease dataset.xlsx  # Sample dataset
-├── requirements.txt            # Python dependencies
-├── DEPLOYMENT_GUIDE.md         # Deployment instructions
-└── README.md                   # Project documentation
+### 1. Clone the Repository
+```bash
+git clone https://github.com/Mmadrb/liver-disease-analytics.git
+cd liver-disease-analytics
 ```
 
-## Contributing
+### 2. Install Dependencies
+```bash
+pip install -r requirements.txt
+```
 
-Contributions are welcome! Please feel free to open issues or submit pull requests.
+### 3. Run the Streamlit App
+```bash
+streamlit run liver_disease.py
+```
 
-## License
+---
 
-This project is licensed under the MIT License.
+## 🛠️ Technical Architecture
+
+### Data Schema
+The model utilizes 19 baseline clinical features:
+- **Demographics**: Age, Sex
+- **Comorbidities/Habits**: DM, Smoke, Alcohol Use, Other toxins
+- **Laboratory Values**: WBC, Hb, Plt, PT, INR, Total Bilirubin, Albumin, ALP, AST, ALT, CRP
+- **Calculated Ratios**: AST/ALT Ratio
+
+### ML Pipeline Details
+- **Preprocessing**: Median imputation for numeric data, most-frequent for categorical; Standard scaling and One-Hot encoding.
+- **Imbalance Handling**: Synthetic Minority Over-sampling Technique (**SMOTE**) integrated into the training pipeline.
+- **Model Selection**: Automated comparison between **Random Forest** and **Logistic Regression** using Repeated Stratified K-Fold CV.
+- **Calibration**: Post-hoc calibration via Isotonic Regression on a dedicated calibration set.
+
+---
+
+## 📊 Model Evaluation Summary
+
+| Metric | Value (Test Set) |
+| :--- | :--- |
+| **ROC-AUC (Weighted OvR)** | 0.894 |
+| **Balanced Accuracy** | 0.821 |
+| **F1-Score (Weighted)** | 0.845 |
+
+---
+
+## 🧬 Interpretability (SHAP)
+
+The system provides both **Global** (feature importance across the population) and **Local** (individual patient reasoning) explanations.
+
+- **Global**: Identifies AST, Bilirubin, and Age as top predictors.
+- **Local**: The Streamlit app generates a SHAP bar plot for every prediction, showing which features increased or decreased the risk for a specific patient.
+
+---
+
+## 📑 Citation
+
+If you use this pipeline or app in your research, please cite:
+
+```bibtex
+@software{liver_disease_analytics_2026,
+  author = {Mmadrb},
+  title = {Liver Disease Analytics: A TRIPOD-AI Compliant Clinical ML System},
+  year = {2026},
+  url = {https://github.com/Mmadrb/liver-disease-analytics}
+}
+```
+
+---
+
+## ⚖️ License
+Distributed under the MIT License. See `LICENSE` for more information.
