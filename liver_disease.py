@@ -631,7 +631,7 @@ def train_baseline_pipeline(
     df_ml = df_ml[~df_ml["Diagnosis"].isin(excluded_classes)]
     
     class_counts = df_ml["Diagnosis"].value_counts()
-    viable_classes = class_counts[class_counts >= 10].index.tolist()
+    viable_classes = class_counts[class_counts >= 5].index.tolist()
     if len(viable_classes) < 2:
         return None
     df_ml = df_ml[df_ml["Diagnosis"].isin(viable_classes)]
@@ -674,8 +674,8 @@ def train_baseline_pipeline(
         ("clf",  lr),
     ])
 
-    rf_scores = cross_val_score(rf_pipe, X, y_enc, cv=cv_strategy, scoring="roc_auc_weighted")
-    lr_scores = cross_val_score(lr_pipe, X, y_enc, cv=cv_strategy, scoring="roc_auc_weighted")
+    rf_scores = cross_val_score(rf_pipe, X, y_enc, cv=cv_strategy, scoring="roc_auc_ovr_weighted")
+    lr_scores = cross_val_score(lr_pipe, X, y_enc, cv=cv_strategy, scoring="roc_auc_ovr_weighted")
     
     p_val = wilcoxon(rf_scores, lr_scores).pvalue
     if rf_scores.mean() >= lr_scores.mean():
@@ -692,7 +692,7 @@ def train_baseline_pipeline(
     
     search = RandomizedSearchCV(
         selected_pipe, param_grid, n_iter=min(N_SEARCH_ITER, 5),
-        cv=StratifiedKFold(3), scoring="roc_auc_weighted", random_state=RS
+        cv=StratifiedKFold(3), scoring="roc_auc_ovr_weighted", random_state=RS
     )
     search.fit(X, y_enc)
     best_pipe = search.best_estimator_
