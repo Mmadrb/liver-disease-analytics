@@ -236,11 +236,6 @@ class ProcessedDataset:
 class BaselinePipelineResult:
     """
     All artefacts produced by train_baseline_pipeline.
-
-    Using a dataclass (rather than a plain dict) prevents accidental key-name
-    typos at call sites and makes the contract explicit.
-    The predict_proba / predict methods are defined here so callers never need
-    to reach into raw closures.
     """
     pipe:                   Any          # fitted sklearn / ImbPipeline
     isotonic_calibrators:   dict         # {class_index: IsotonicRegression | None}
@@ -280,7 +275,6 @@ class BaselinePipelineResult:
                 cal_probs[:, i] = calibrator.predict(raw_probs[:, i])
             else:
                 cal_probs[:, i] = raw_probs[:, i]
-        # Renormalise to ensure sum-to-one
         row_sums = cal_probs.sum(axis=1, keepdims=True)
         return cal_probs / np.where(row_sums > 0, row_sums, 1.0)
 
@@ -299,22 +293,13 @@ def _normalise_binary_field(
     neg_patterns: list[str],
     field_name: str = "Field",
 ) -> pd.Series:
-    """
-    Map free-text binary fields to 0/1 using regex.
-    Unmatched values return NaN.
-    """
+    """Map free-text binary fields to 0/1 using regex."""
     s = series.astype(str).str.strip().str.lower()
     out = pd.Series(np.nan, index=series.index)
-    
     pos_re = re.compile("|".join(pos_patterns), re.IGNORECASE)
     neg_re = re.compile("|".join(neg_patterns), re.IGNORECASE)
-    
     out[s.str.fullmatch(pos_re, na=False)] = 1
     out[s.str.fullmatch(neg_re, na=False)] = 0
-    
-    n_unmatched = out.isna().sum()
-    if n_unmatched > 0:
-        log.debug("Binary normalisation: %d unmatched rows in '%s'", n_unmatched, field_name)
     return out
 
 
@@ -351,10 +336,7 @@ def _validate_prediction_input(
 
 @st.cache_data(show_spinner=False)
 def _get_or_cache_figure(key: str, plot_fn: Callable, *args, **kwargs) -> BytesIO | None:
-    """
-    Execute a plotting function and return a BytesIO buffer of the PNG.
-    Used to prevent Matplotlib objects from being stored in st.session_state.
-    """
+    """Execute a plotting function and return a BytesIO buffer of the PNG."""
     try:
         fig = plot_fn(*args, **kwargs)
         if fig is None:
@@ -373,13 +355,7 @@ def _get_or_cache_figure(key: str, plot_fn: Callable, *args, **kwargs) -> BytesI
 # ──────────────────────────────────────────────────────────────────────────────
 
 def _resolve_aclf_column(df: pd.DataFrame) -> tuple[pd.DataFrame, str | None, list]:
-    """
-    Identify and parse the ACLF grade column.
-    
-    Priority:
-      1. 'ACLF-EASL' with '0=' or 'organ' in name
-      2. Any 'ACLF' column not containing 'GRADE'
-    """
+    """Identify and parse the ACLF grade column."""
     aclf_col = None
     for col in df.columns:
         c_up = str(col).upper().strip()
@@ -404,7 +380,6 @@ def _resolve_aclf_column(df: pd.DataFrame) -> tuple[pd.DataFrame, str | None, li
             .map(ACLF_TEXT_MAP)
         )
         df["ACLF Grade"] = pd.to_numeric(df["ACLF Grade"], errors="coerce")
-        # Handle sentinel missing values
         sentinels = {"*", "na", "n/a", "nan", ""}
         mask_missing = df[aclf_col].astype(str).str.strip().str.lower().isin(sentinels)
         df.loc[mask_missing, "ACLF Grade"] = np.nan
@@ -447,9 +422,7 @@ def _map_organ_failures(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, str]]
 def _rename_columns(
     df: pd.DataFrame,
 ) -> tuple[pd.DataFrame, dict[str, str]]:
-    """
-    Rename columns according to RENAME_MAPPING.
-    """
+    """Rename columns according to RENAME_MAPPING."""
     applied: dict[str, str] = {}
     for old, new in RENAME_MAPPING.items():
         if old in df.columns:
@@ -657,9 +630,7 @@ def train_baseline_pipeline(
         ("cat", cat_pipe, categorical_features),
     ])
 
-    # Model selection via CV
     cv_strategy = RepeatedStratifiedKFold(n_splits=5, n_repeats=3, random_state=RS)
-    
     rf = RandomForestClassifier(n_estimators=100, class_weight="balanced", random_state=RS)
     lr = LogisticRegression(max_iter=1000, class_weight="balanced", random_state=RS)
     
@@ -677,34 +648,20 @@ def train_baseline_pipeline(
     rf_scores = cross_val_score(rf_pipe, X, y_enc, cv=cv_strategy, scoring="roc_auc_ovr_weighted")
     lr_scores = cross_val_score(lr_pipe, X, y_enc, cv=cv_strategy, scoring="roc_auc_ovr_weighted")
     
-    p_val = wilcoxon(rf_scores, lr_scores).pvalue
     if rf_scores.mean() >= lr_scores.mean():
         selected_pipe, selected_name, is_tree_based = rf_pipe, "Random Forest", True
     else:
         selected_pipe, selected_name, is_tree_based = lr_pipe, "Logistic Regression", False
 
-    # Hyperparameter search
-    param_grid = {
-        "clf__n_estimators": [100, 200, 300]
-    } if is_tree_based else {
-        "clf__C": [0.1, 1.0, 10.0]
-    }
-    
-    search = RandomizedSearchCV(
-        selected_pipe, param_grid, n_iter=min(N_SEARCH_ITER, 5),
-        cv=StratifiedKFold(3), scoring="roc_auc_ovr_weighted", random_state=RS
-    )
+    param_grid = {"clf__n_estimators": [100, 200]} if is_tree_based else {"clf__C": [0.1, 1.0]}
+    search = RandomizedSearchCV(selected_pipe, param_grid, n_iter=2, cv=StratifiedKFold(3), scoring="roc_auc_ovr_weighted", random_state=RS)
     search.fit(X, y_enc)
     best_pipe = search.best_estimator_
-    best_params = search.best_params_
 
-    # Three-way split
     X_train, X_temp, y_train, y_temp = train_test_split(X, y_enc, test_size=0.3, stratify=y_enc, random_state=RS)
     X_cal, X_test, y_cal, y_test = train_test_split(X_temp, y_temp, test_size=0.5, stratify=y_temp, random_state=RS)
 
     fitted_pipe = clone(best_pipe).fit(X_train, y_train)
-    
-    # Isotonic Calibration (OvR)
     cal_probs_raw = fitted_pipe.predict_proba(X_cal)
     isotonic_calibrators = {}
     for i in range(len(viable_classes)):
@@ -712,11 +669,10 @@ def train_baseline_pipeline(
         ir.fit(cal_probs_raw[:, i], (y_cal == i).astype(int))
         isotonic_calibrators[i] = ir
 
-    # Evaluation on Test Set
     _tmp = BaselinePipelineResult(
         pipe=fitted_pipe, isotonic_calibrators=isotonic_calibrators,
         label_encoder=label_encoder, selected_model_name=selected_name,
-        is_tree_based=is_tree_based, best_params=best_params,
+        is_tree_based=is_tree_based, best_params={},
         numeric_features=numeric_features, categorical_features=categorical_features,
         feature_names_transformed=[], available_features=available_features,
         feature_map=feat_map, X_test=X_test, y_test=y_test, y_pred=np.array([]),
@@ -743,13 +699,9 @@ def train_baseline_pipeline(
     }
     
     report_dict = classification_report(y_test, y_pred, target_names=viable_classes, output_dict=True)
-
-    # SHAP
     prep_obj = fitted_pipe.named_steps["prep"]
     clf_obj  = fitted_pipe.named_steps["clf"]
     X_test_df = pd.DataFrame(prep_obj.transform(X_test))
-    
-    # Feature names after transformation
     ohe_feat = prep_obj.named_transformers_["cat"].named_steps["ohe"].get_feature_names_out(categorical_features)
     feature_names_transformed = numeric_features + list(ohe_feat)
     X_test_df.columns = feature_names_transformed
@@ -772,7 +724,7 @@ def train_baseline_pipeline(
     return BaselinePipelineResult(
         pipe=fitted_pipe, isotonic_calibrators=isotonic_calibrators,
         label_encoder=label_encoder, selected_model_name=selected_name,
-        is_tree_based=is_tree_based, best_params=best_params,
+        is_tree_based=is_tree_based, best_params={},
         numeric_features=numeric_features, categorical_features=categorical_features,
         feature_names_transformed=feature_names_transformed, available_features=available_features,
         feature_map=feat_map, X_test=X_test, y_test=y_test, y_pred=y_pred,
@@ -845,13 +797,6 @@ def build_shap_beeswarm(sv, X, feature_names, class_name):
     return fig
 
 
-def build_shap_bar(sv, X, feature_names, class_name):
-    fig, ax = plt.subplots(figsize=(8, 6))
-    shap.summary_plot(sv, X, plot_type="bar", show=False)
-    plt.title(f"SHAP Importance - {class_name}")
-    return fig
-
-
 # ──────────────────────────────────────────────────────────────────────────────
 # FILE INGESTION
 # ──────────────────────────────────────────────────────────────────────────────
@@ -861,7 +806,6 @@ try:
 except NameError:
     _current_dir = os.getcwd()
 
-# Try CSV first, then Excel
 _csv_path = os.path.join(_current_dir, "liver_disease_dataset.csv")
 _xlsx_path = os.path.join(_current_dir, "liver disease dataset.xlsx")
 
@@ -904,18 +848,84 @@ df = apply_filters(df_raw, tuple(sel_sex), tuple(sel_age), tuple(sel_diag))
 # ──────────────────────────────────────────────────────────────────────────────
 st.title("📊 Liver Disease Analytics")
 
+_aclf_rate      = (df["ACLF Grade"] > 0).sum() / len(df) * 100 if len(df) > 0 else 0
+_mortality_rate = (df["Patient Outcome"] == "Deceased").sum() / len(df) * 100 if len(df) > 0 else 0
+
 tab_summary, tab_risk, tab_clinical, tab_organ, tab_los, tab_ml = st.tabs([
     "Summary", "Risk", "Clinical", "Organ Failure", "LOS", "🤖 ML Predictor"
 ])
 
 with tab_summary:
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("Total Patients", len(df))
-    if "MELD Score" in df.columns:
-        c2.metric("Avg MELD", f"{df['MELD Score'].mean():.1f}")
-    if "Patient Outcome" in df.columns:
-        mort = (df["Patient Outcome"] == "Deceased").mean() * 100
-        c3.metric("Mortality", f"{mort:.1f}%")
+    c2.metric("Mortality Rate", f"{_mortality_rate:.1f}%")
+    _avg_meld = df["MELD Score"].mean() if "MELD Score" in df.columns else float("nan")
+    _avg_los  = df["Length of Stay"].mean() if "Length of Stay" in df.columns else float("nan")
+    c3.metric("Avg MELD", f"{_avg_meld:.1f}" if not np.isnan(_avg_meld) else "N/A")
+    c4.metric("Avg LOS", f"{_avg_los:.1f} days" if not np.isnan(_avg_los) else "N/A")
+    c5.metric("ACLF Rate", f"{_aclf_rate:.1f}%")
+
+    st.markdown("---")
+    col_pie, col_gauge = st.columns(2)
+    with col_pie:
+        if "Diagnosis" in df.columns and len(df) > 0:
+            st.plotly_chart(px.pie(df["Diagnosis"].value_counts().reset_index(), values="count", names="Diagnosis", hole=0.5, title="Etiology Breakdown"), use_container_width=True)
+    with col_gauge:
+        if not np.isnan(_avg_meld):
+            st.plotly_chart(build_meld_gauge(_avg_meld), use_container_width=True)
+
+with tab_risk:
+    rs_c1, rs_c2 = st.columns(2)
+    with rs_c1:
+        if "MELD Risk Tier" in df.columns and len(df) > 0:
+            _tier_out = df.groupby(["MELD Risk Tier", "Patient Outcome"], observed=False).size().reset_index(name="Count")
+            _tier_out = _tier_out[_tier_out["MELD Risk Tier"] != "Unknown"]
+            if len(_tier_out) > 0:
+                st.plotly_chart(px.bar(_tier_out, x="MELD Risk Tier", y="Count", color="Patient Outcome", barmode="stack", title="MELD Risk Tier vs Outcome", color_discrete_map=OUTCOME_COLORS), use_container_width=True)
+    with rs_c2:
+        if "Age Group" in df.columns and "Alive_Numeric" in df.columns and len(df) > 0:
+            _heat_df = df[(df["Age Group"] != "Unknown") & (df["CTP Class"] != "Unknown")]
+            if len(_heat_df) > 0:
+                _pivot = _heat_df.pivot_table(index="Age Group", columns="CTP Class", values="Alive_Numeric", aggfunc=lambda x: (1 - np.nanmean(x)) * 100, observed=False).fillna(0)
+                st.plotly_chart(px.imshow(_pivot, text_auto=".1f", color_continuous_scale="Reds", title="Mortality Rate (%) by Age & CTP Class"), use_container_width=True)
+
+with tab_clinical:
+    ci_c1, ci_c2 = st.columns(2)
+    def _outcome_box(col_name, title):
+        if col_name in df.columns and len(df.dropna(subset=[col_name])) > 0:
+            st.plotly_chart(px.box(df.dropna(subset=[col_name]), x="Patient Outcome", y=col_name, color="Patient Outcome", title=title, color_discrete_map=OUTCOME_COLORS).update_layout(showlegend=False), use_container_width=True)
+    with ci_c1: _outcome_box("AST", "AST Level by Outcome")
+    with ci_c2: _outcome_box("ALT", "ALT Level by Outcome")
+    st.markdown("---")
+    ci_c3, ci_c4 = st.columns(2)
+    with ci_c3: _outcome_box("Bilirubin", "Bilirubin Level by Outcome")
+    with ci_c4: _outcome_box("MELD Score", "MELD Score by Outcome")
+
+with tab_organ:
+    st.markdown("### Organ Failure & ACLF Analysis")
+    _aclf_positive = (df["ACLF Grade"] > 0).sum() if "ACLF Grade" in df.columns else 0
+    if _aclf_positive == 0:
+        st.warning("⚠️ No ACLF cases detected in the current filtered data.")
+    else:
+        of_c1, of_c2 = st.columns([2, 1])
+        with of_c1:
+            _aclf_df = df[df["ACLF Grade"] > 0].copy()
+            if "Diagnosis" in _aclf_df.columns and len(_aclf_df) > 0:
+                _aclf_diag = _aclf_df.groupby(["Diagnosis", "ACLF Grade"]).size().reset_index(name="Count")
+                _aclf_diag["ACLF Grade"] = _aclf_diag["ACLF Grade"].apply(lambda x: f"{x} Organ Failure(s)" if x < 3 else "≥3 Organ Failures")
+                st.plotly_chart(px.bar(_aclf_diag, x="Diagnosis", y="Count", color="ACLF Grade", barmode="stack", title=f"ACLF Distribution by Diagnosis (n={len(_aclf_df)})", color_discrete_sequence=px.colors.sequential.YlOrRd), use_container_width=True)
+        with of_c2:
+            _severe = int((df["ACLF Grade"] >= 2).sum()); _dead = int((df["Patient Outcome"] == "Deceased").sum())
+            st.plotly_chart(px.funnel({"number": [len(df), _aclf_positive, _severe, _dead], "stage": [f"Admitted (n={len(df)})", f"Any ACLF (n={_aclf_positive})", f"Severe ACLF ≥2 (n={_severe})", f"Deceased (n={_dead})"]}, x="number", y="stage", title="Patient Flow"), use_container_width=True)
+
+with tab_los:
+    los_c1, los_c2 = st.columns(2)
+    with los_c1:
+        if "Length of Stay" in df.columns and len(df.dropna(subset=["Length of Stay"])) > 0:
+            st.plotly_chart(px.histogram(df.dropna(subset=["Length of Stay"]), x="Length of Stay", nbins=30, color="Patient Outcome", title="LOS Distribution", color_discrete_map=OUTCOME_COLORS, marginal="box"), use_container_width=True)
+    with los_c2:
+        if "MELD Score" in df.columns and "Length of Stay" in df.columns and len(df.dropna(subset=["MELD Score", "Length of Stay"])) > 0:
+            st.plotly_chart(px.scatter(df.dropna(subset=["MELD Score", "Length of Stay"]), x="MELD Score", y="Length of Stay", color="Patient Outcome", trendline="ols", title="MELD Score vs Length of Stay", color_discrete_map=OUTCOME_COLORS, opacity=0.6), use_container_width=True)
 
 with tab_ml:
     if not st.session_state.get("bl_loaded", False):
@@ -932,7 +942,6 @@ with tab_ml:
 
     bl = st.session_state["bl_results"]
     class_names = list(bl.label_encoder.classes_)
-    
     st.markdown("### 📊 Performance")
     m_cols = st.columns(len(bl.metrics))
     for i, (m_name, (val, ci)) in enumerate(bl.metrics.items()):
@@ -956,8 +965,6 @@ with tab_ml:
         probs = bl.predict_proba(user_df)[0]
         pred_idx = np.argmax(probs)
         st.success(f"Predicted: **{class_names[pred_idx]}** ({probs[pred_idx]*100:.1f}%)")
-        
-        # SHAP for prediction
         st.markdown("### 🐝 Explainability")
         shap_cls = st.selectbox("SHAP Class", class_names)
         cls_idx = class_names.index(shap_cls)
