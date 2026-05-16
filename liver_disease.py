@@ -721,6 +721,16 @@ def train_baseline_pipeline(
     else:
         shap_values_normalised = [shap_values_raw]
 
+    # Subgroup analysis
+    subgroup_results = {}
+    for sub_feat in ["Sex", "Age Group"]:
+        if sub_feat in X_test.columns:
+            for val in X_test[sub_feat].unique():
+                mask = X_test[sub_feat] == val
+                if mask.sum() >= 5:
+                    sub_auc = roc_auc_score(y_test[mask], y_prob[mask], multi_class="ovr", average="weighted")
+                    subgroup_results[f"{sub_feat}: {val}"] = sub_auc
+
     return BaselinePipelineResult(
         pipe=fitted_pipe, isotonic_calibrators=isotonic_calibrators,
         label_encoder=label_encoder, selected_model_name=selected_name,
@@ -730,7 +740,7 @@ def train_baseline_pipeline(
         feature_map=feat_map, X_test=X_test, y_test=y_test, y_pred=y_pred,
         y_prob=y_prob, X_test_transformed=X_test_df, metrics=metrics,
         classification_report_dict=report_dict, explainer=explainer,
-        shap_values=shap_values_normalised, subgroup_results={},
+        shap_values=shap_values_normalised, subgroup_results=subgroup_results,
         misclassified_df=pd.DataFrame(), correct_df=pd.DataFrame(),
         error_patterns=pd.DataFrame(), n_train=len(X_train), n_calibration=len(X_cal), n_test=len(X_test)
     )
@@ -794,6 +804,12 @@ def build_shap_beeswarm(sv, X, feature_names, class_name):
     fig, ax = plt.subplots(figsize=(8, 6))
     shap.summary_plot(sv, X, show=False)
     plt.title(f"SHAP Beeswarm - {class_name}")
+    return fig
+
+def build_shap_bar(sv, X, feature_names, class_name):
+    fig, ax = plt.subplots(figsize=(8, 6))
+    shap.summary_plot(sv, X, plot_type="bar", show=False)
+    plt.title(f"SHAP Feature Importance - {class_name}")
     return fig
 
 
@@ -917,6 +933,18 @@ with tab_organ:
         with of_c2:
             _severe = int((df["ACLF Grade"] >= 2).sum()); _dead = int((df["Patient Outcome"] == "Deceased").sum())
             st.plotly_chart(px.funnel({"number": [len(df), _aclf_positive, _severe, _dead], "stage": [f"Admitted (n={len(df)})", f"Any ACLF (n={_aclf_positive})", f"Severe ACLF ≥2 (n={_severe})", f"Deceased (n={_dead})"]}, x="number", y="stage", title="Patient Flow"), use_container_width=True)
+    
+    st.markdown("---")
+    st.markdown("### Individual Organ Failure Analysis")
+    organ_cols = ["liver_failure", "kidney_failure", "brain_failure", "circulatory_failure", "respiratory_failure", "coagulation_failure"]
+    available_organs = [c for c in organ_cols if c in df.columns and df[c].sum() > 0]
+    if available_organs:
+        organ_counts = df[available_organs].sum().reset_index()
+        organ_counts.columns = ["Organ System", "Failure Count"]
+        organ_counts["Organ System"] = organ_counts["Organ System"].str.replace("_", " ").str.title()
+        st.plotly_chart(px.bar(organ_counts, x="Organ System", y="Failure Count", title="Organ Failure Frequency", color="Organ System"), use_container_width=True)
+    else:
+        st.info("No specific organ failure data available for the current selection.")
 
 with tab_los:
     los_c1, los_c2 = st.columns(2)
@@ -942,13 +970,44 @@ with tab_ml:
 
     bl = st.session_state["bl_results"]
     class_names = list(bl.label_encoder.classes_)
-    st.markdown("### 📊 Performance")
+    
+    st.markdown("### 📊 Performance Metrics")
     m_cols = st.columns(len(bl.metrics))
     for i, (m_name, (val, ci)) in enumerate(bl.metrics.items()):
-        m_cols[i].metric(m_name, f"{val:.3f}")
+        m_cols[i].metric(m_name, f"{val:.3f}", help=f"95% CI: [{ci[0]:.3f}, {ci[1]:.3f}]")
 
     st.markdown("---")
-    st.markdown("### 🔮 Prediction Tool")
+    st.markdown("### 📈 Evaluation Plots")
+    ev_c1, ev_c2 = st.columns(2)
+    with ev_c1:
+        st.pyplot(build_roc_figure(bl.y_test, bl.y_prob, class_names, bl.selected_model_name))
+    with ev_c2:
+        st.pyplot(build_calibration_figure(bl.y_test, bl.y_prob, class_names))
+    
+    st.markdown("---")
+    st.markdown("### 📑 Classification Report")
+    st.dataframe(pd.DataFrame(bl.classification_report_dict).transpose(), use_container_width=True)
+
+    st.markdown("---")
+    st.markdown("### 🧪 Subgroup Sensitivity Analysis")
+    if bl.subgroup_results:
+        sub_df = pd.DataFrame(list(bl.subgroup_results.items()), columns=["Subgroup", "AUC-ROC"])
+        st.plotly_chart(px.bar(sub_df, x="Subgroup", y="AUC-ROC", title="Model Performance (AUC) across Subgroups", color="AUC-ROC", color_continuous_scale="Viridis"), use_container_width=True)
+    else:
+        st.info("Insufficient data for subgroup analysis.")
+
+    st.markdown("---")
+    st.markdown("### 🐝 Global Explainability (SHAP)")
+    shap_cls_global = st.selectbox("Select Class for Global SHAP", class_names, key="global_shap")
+    cls_idx_global = class_names.index(shap_cls_global)
+    sh_c1, sh_c2 = st.columns(2)
+    with sh_c1:
+        st.pyplot(build_shap_beeswarm(bl.shap_values[cls_idx_global], bl.X_test_transformed, bl.feature_names_transformed, shap_cls_global))
+    with sh_c2:
+        st.pyplot(build_shap_bar(bl.shap_values[cls_idx_global], bl.X_test_transformed, bl.feature_names_transformed, shap_cls_global))
+
+    st.markdown("---")
+    st.markdown("### 🔮 Individual Prediction Tool")
     inp = {}
     f_cols = st.columns(4)
     for i, f in enumerate(bl.available_features):
@@ -965,8 +1024,24 @@ with tab_ml:
         probs = bl.predict_proba(user_df)[0]
         pred_idx = np.argmax(probs)
         st.success(f"Predicted: **{class_names[pred_idx]}** ({probs[pred_idx]*100:.1f}%)")
-        st.markdown("### 🐝 Explainability")
-        shap_cls = st.selectbox("SHAP Class", class_names)
-        cls_idx = class_names.index(shap_cls)
-        fig = build_shap_beeswarm(bl.shap_values[cls_idx], bl.X_test_transformed, bl.feature_names_transformed, shap_cls)
+        
+        st.markdown("### 🔍 Local Explanation")
+        user_transformed = bl.pipe.named_steps["prep"].transform(user_df)
+        user_transformed_df = pd.DataFrame(user_transformed, columns=bl.feature_names_transformed)
+        
+        with _suppress_shap_warnings():
+            if bl.is_tree_based:
+                local_shap = bl.explainer.shap_values(user_transformed_df)
+            else:
+                local_shap = bl.explainer.shap_values(user_transformed_df)
+        
+        if isinstance(local_shap, list):
+            local_shap_cls = local_shap[pred_idx]
+        elif np.ndim(local_shap) == 3:
+            local_shap_cls = local_shap[0, :, pred_idx]
+        else:
+            local_shap_cls = local_shap[0]
+
+        fig, ax = plt.subplots(figsize=(8, 6))
+        shap.bar_plot(local_shap_cls[0] if isinstance(local_shap_cls, list) else local_shap_cls, feature_names=bl.feature_names_transformed, show=False)
         st.pyplot(fig)
